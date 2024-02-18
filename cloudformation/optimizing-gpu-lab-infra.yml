@@ -1,0 +1,296 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  AWS Innovate AI/ML Data Edition - Lab infra Optimizing-GPU-Utilization-for-AI-ML-Workloads
+
+Parameters:
+  DeployInfra:
+    Type: String
+    Default: "true"
+    Description: If "true", CloudFormation will deploy the CloudWatch related resources for this lab, together with a simple VPC, Public Subnet and Security Group for the lab EC2 instances to be launched on. If "false", only the CloudWatch related resources will be deployed.
+    AllowedValues:
+      - true
+      - false
+
+Conditions:
+  WithInfra: !Equals 
+    - !Ref DeployInfra
+    - true
+
+Resources:
+  IGW:
+    Type: AWS::EC2::InternetGateway
+    Condition: "WithInfra"
+
+  IGWAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: "WithInfra"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref IGW
+
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Condition: "WithInfra"
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Condition: "WithInfra"
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt VPC.CidrBlock, 1, 8 ]]
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable1:
+    Type: 'AWS::EC2::RouteTable'
+    Condition: "WithInfra"
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute1:
+    Type: 'AWS::EC2::Route'
+    Condition: "WithInfra"
+    DependsOn: 
+      - IGW
+      - IGWAttach
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  PublicSubnet1RouteTableAssociation1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Condition: "WithInfra"
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable1
+
+  EC2IAMRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+        Roles: [!Ref EC2IAMRole]
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: "WithInfra"
+    Properties:
+      GroupDescription: Allow all outbound traffic by default
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  CloudWatchAgentConfParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: CloudWatch-Agent-Config-GPU-Lab
+      Type: String
+      Description: SSM Parameter for configuring the CloudWatch Agent on GPU-enabled instances.
+      Value: "{
+          \"agent\": {
+              \"metrics_collection_interval\": 60,
+              \"run_as_user\": \"cwagent\"
+          },
+          \"metrics\": {
+              \"namespace\": \"CWAgentGPU\",
+              \"aggregation_dimensions\": [
+                  [
+                      \"InstanceId\"
+                  ]
+              ],
+              \"append_dimensions\": {
+                  \"AutoScalingGroupName\": \"${aws:AutoScalingGroupName}\",
+                  \"ImageId\": \"${aws:ImageId}\",
+                  \"InstanceId\": \"${aws:InstanceId}\",
+                  \"InstanceType\": \"${aws:InstanceType}\"
+              },
+              \"metrics_collected\": {
+                  \"cpu\": {
+                      \"measurement\": [
+                          \"cpu_usage_idle\",
+                          \"cpu_usage_iowait\",
+                          \"cpu_usage_user\",
+                          \"cpu_usage_system\"
+                      ],
+                      \"metrics_collection_interval\": 60,
+                      \"resources\": [
+                          \"*\"
+                      ],
+                      \"totalcpu\": false
+                  },
+                  \"disk\": {
+                      \"measurement\": [
+                          \"used_percent\",
+                          \"inodes_free\"
+                      ],
+                      \"metrics_collection_interval\": 60,
+                      \"resources\": [
+                          \"*\"
+                      ]
+                  },
+                  \"diskio\": {
+                      \"measurement\": [
+                          \"io_time\"
+                      ],
+                      \"metrics_collection_interval\": 60,
+                      \"resources\": [
+                          \"*\"
+                      ]
+                  },
+                  \"mem\": {
+                      \"measurement\": [
+                          \"mem_used_percent\"
+                      ],
+                      \"metrics_collection_interval\": 60
+                  },
+                  \"swap\": {
+                      \"measurement\": [
+                          \"swap_used_percent\"
+                      ],
+                      \"metrics_collection_interval\": 60
+                  },
+                  \"nvidia_gpu\": {
+                      \"measurement\": [
+                          \"utilization_gpu\",
+                          \"temperature_gpu\",
+                          \"utilization_memory\",
+                          \"fan_speed\",
+                          \"memory_total\",
+                          \"memory_used\",
+                          \"memory_free\",
+                          \"pcie_link_gen_current\",
+                          \"pcie_link_width_current\",
+                          \"encoder_stats_session_count\",
+                          \"encoder_stats_average_fps\",
+                          \"encoder_stats_average_latency\",
+                          \"clocks_current_graphics\",
+                          \"clocks_current_sm\",
+                          \"clocks_current_memory\",
+                          \"clocks_current_video\"
+                      ],
+                      \"metrics_collection_interval\": 60
+                  }
+              }
+          }
+      }"
+
+  GPUCloudWatchDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: My-GPU-Usage
+      DashboardBody: !Sub "{
+          \"widgets\": [
+              {
+                  \"height\": 10,
+                  \"width\": 24,
+                  \"y\": 16,
+                  \"x\": 0,
+                  \"type\": \"metric\",
+                  \"properties\": {
+                      \"metrics\": [
+                          [{\"expression\": \"SELECT AVG(nvidia_smi_utilization_gpu) FROM SCHEMA(CWAgentGPU, InstanceId) GROUP BY InstanceId\",\"id\": \"q1\"}]
+                      ],
+                      \"view\": \"timeSeries\",
+                      \"stacked\": false,
+                      \"region\": \"${AWS::Region}\",
+                      \"stat\": \"Average\",
+                      \"period\": 300,
+                      \"title\": \"GPU Core Utilization\",
+                      \"yAxis\": {
+                          \"left\": {\"label\": \"Percent\",\"max\": 100,\"min\": 0,\"showUnits\": false}
+                      }
+                  }
+              },
+              {
+                  \"height\": 7,
+                  \"width\": 8,
+                  \"y\": 0,
+                  \"x\": 0,
+                  \"type\": \"metric\",
+                  \"properties\": {
+                      \"metrics\": [
+                          [{\"expression\": \"SELECT AVG(nvidia_smi_utilization_gpu) FROM SCHEMA(CWAgentGPU, InstanceId)\", \"label\": \"Utilization\",\"id\": \"q1\"}]
+                      ],
+                      \"view\": \"gauge\",
+                      \"stacked\": false,
+                      \"region\": \"${AWS::Region}\",
+                      \"stat\": \"Average\",
+                      \"period\": 300,
+                      \"title\": \"Average GPU Core Utilization\",
+                      \"yAxis\": {\"left\": {\"max\": 100, \"min\": 0}
+                      },
+                      \"liveData\": false
+                  }
+              },
+              {
+                  \"height\": 9,
+                  \"width\": 24,
+                  \"y\": 7,
+                  \"x\": 0,
+                  \"type\": \"metric\",
+                  \"properties\": {
+                      \"metrics\": [
+                          [{ \"expression\": \"SEARCH(' MetricName=nvidia_smi_memory_used {CWAgentGPU, InstanceId} ', 'Average')\", \"id\": \"m1\", \"visible\": false }],
+                          [{ \"expression\": \"SEARCH(' MetricName=nvidia_smi_memory_total {CWAgentGPU, InstanceId} ', 'Average')\", \"id\": \"m2\", \"visible\": false }],
+                          [{ \"expression\": \"SEARCH(' MetricName=mem_used_percent {CWAgentGPU, InstanceId} ', 'Average')\", \"id\": \"m3\", \"visible\": false }],
+                          [{ \"expression\": \"100*AVG(m1)/AVG(m2)\", \"label\": \"GPU\", \"id\": \"e2\", \"color\": \"#17becf\" }],
+                          [{ \"expression\": \"AVG(m3)\", \"label\": \"RAM\", \"id\": \"e3\" }]
+                      ],
+                      \"view\": \"timeSeries\",
+                      \"stacked\": false,
+                      \"region\": \"${AWS::Region}\",
+                      \"stat\": \"Average\",
+                      \"period\": 300,
+                      \"yAxis\": {
+                          \"left\": {\"min\": 0,\"max\": 100,\"label\": \"Percent\",\"showUnits\": false}
+                      },
+                      \"title\": \"Average Memory Utilization\"
+                  }
+              },
+              {
+                  \"height\": 7,
+                  \"width\": 8,
+                  \"y\": 0,
+                  \"x\": 8,
+                  \"type\": \"metric\",
+                  \"properties\": {
+                      \"metrics\": [
+                          [ { \"expression\": \"SEARCH(' MetricName=nvidia_smi_memory_used {CWAgentGPU, InstanceId} ', 'Average')\", \"id\": \"m1\", \"visible\": false } ],
+                          [ { \"expression\": \"SEARCH(' MetricName=nvidia_smi_memory_total {CWAgentGPU, InstanceId} ', 'Average')\", \"id\": \"m2\", \"visible\": false } ],
+                          [ { \"expression\": \"100*AVG(m1)/AVG(m2)\", \"label\": \"Utilization\", \"id\": \"e2\" } ]
+                      ],
+                      \"sparkline\": true,
+                      \"view\": \"gauge\",
+                      \"region\": \"${AWS::Region}\",
+                      \"stat\": \"Average\",
+                      \"period\": 300,
+                      \"yAxis\": {
+                          \"left\": {\"min\": 0,\"max\": 100}
+                      },
+                      \"liveData\": false,
+                      \"title\": \"GPU Memory Utilization\"
+                  }
+              }
+          ]
+      }"
