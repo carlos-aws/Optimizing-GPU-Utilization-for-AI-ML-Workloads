@@ -258,3 +258,15 @@ Visit the [AWS Well-Architected Framework white paper](https://docs.aws.amazon.c
 - [PERF02-BP06 Use optimized hardware-based compute accelerators](https://docs.aws.amazon.com/wellarchitected/latest/framework/perf_compute_hardware_compute_accelerators.html)
 - [PERF02-BP03 Collect compute-related metrics](https://docs.aws.amazon.com/wellarchitected/latest/framework/perf_compute_hardware_collect_compute_related_metrics.html)
 - [COST06-BP02 Select resource type, size, and number based on data](https://docs.aws.amazon.com/wellarchitected/latest/framework/cost_type_size_number_resources_data.html)
+
+## Survey
+
+Let us know what you thought of this session and how we can improve the presentation experience for you in the future by completing [this event session poll](https://amazonmr.au1.qualtrics.com/jfe/form/SV_bmgERAD8tX0Eb6m?Session=HAN2). 
+Participants who complete the surveys from AWS Innovate - AI/ML and Data Edition will receive a gift code for USD25 in AWS credits <sup> 1, 2 & 3 </sup>. AWS credits will be sent via email by March 29, 2024.
+Note: Only registrants of AWS Innovate - AI/ML and Data Edition who complete the surveys will receive a gift code for USD25 in AWS credits via email.
+
+<sup>1</sup>AWS Promotional Credits Terms and conditions apply: https://aws.amazon.com/awscredits/
+
+<sup>2</sup>Limited to 1 x USD25 AWS credits per participant.
+
+<sup>3</sup>Participants will be required to provide their business email addresses to receive the gift code for AWS credits.
